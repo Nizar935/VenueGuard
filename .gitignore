@@ -36,3 +36,13 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+### VenueGuard private data ###
+
+# Private photographs and generated biometric data
+/data/input/
+/data/enrollment/
+/data/output/
+
+# Large neural-network model files
+/models/*.onnx
