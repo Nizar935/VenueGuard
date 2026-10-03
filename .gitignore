@@ -46,3 +46,6 @@ build/
 
 # Large neural-network model files
 /models/*.onnx
+
+# Generated biometric profiles
+/data/profiles/
