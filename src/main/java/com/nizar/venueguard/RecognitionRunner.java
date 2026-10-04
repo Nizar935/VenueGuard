@@ -16,8 +16,8 @@ public final class RecognitionRunner {
             Path.of(
                     "data",
                     "input",
-                    //"sample.jpg"
-                     "unknown.png"
+                    "sample.jpg"
+                     //"unknown.png"
             );
 
     private static final Path PROFILE_PATH =

@@ -242,6 +242,76 @@ public final class FaceRecognitionService {
         );
     }
 
+    public RecognitionResult recognize(
+            Mat image,
+            FaceDetection detection,
+            EnrollmentProfile profile
+    ) {
+        Objects.requireNonNull(
+                image,
+                "Image cannot be null"
+        );
+
+        Objects.requireNonNull(
+                detection,
+                "Face detection cannot be null"
+        );
+
+        Objects.requireNonNull(
+                profile,
+                "Enrollment profile cannot be null"
+        );
+
+        if (image.empty()) {
+            throw new IllegalArgumentException(
+                    "Image cannot be empty"
+            );
+        }
+
+        try (
+                Mat faceCrop =
+                        FaceCropper.crop(
+                                image,
+                                detection,
+                                FACE_CROP_MARGIN
+                        )
+        ) {
+            FaceQualityReport qualityReport =
+                    qualityAnalyzer.analyse(faceCrop);
+
+            if (!qualityReport.accepted()) {
+                String reason =
+                        String.join(
+                                "; ",
+                                qualityReport.problems()
+                        );
+
+                if (reason.isBlank()) {
+                    reason =
+                            "Live face failed quality checks";
+                }
+
+                throw new IllegalStateException(reason);
+            }
+
+            try (
+                    Mat detectionRow =
+                            detection.toOpenCvRow();
+
+                    FaceEmbedding queryEmbedding =
+                            embedder.createEmbedding(
+                                    image,
+                                    detectionRow
+                            )
+            ) {
+                return compareAgainstProfile(
+                        queryEmbedding.copyValues(),
+                        profile
+                );
+            }
+        }
+    }
+
     private static double cosineSimilarity(
             float[] first,
             float[] second
