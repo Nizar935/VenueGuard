@@ -49,3 +49,6 @@ build/
 
 # Generated biometric profiles
 /data/profiles/
+
+# Local VenueGuard database
+/data/database/

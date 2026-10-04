@@ -1,5 +1,8 @@
 package com.nizar.venueguard;
 
+import com.nizar.venueguard.database.RecognitionEvent;
+import com.nizar.venueguard.database.RecognitionEventRepository;
+import com.nizar.venueguard.database.VenueGuardDatabase;
 import com.nizar.venueguard.enrollment.EnrollmentProfile;
 import com.nizar.venueguard.enrollment.EnrollmentProfileStore;
 import com.nizar.venueguard.recognition.FaceRecognitionService;
@@ -17,6 +20,9 @@ import org.bytedeco.opencv.opencv_videoio.VideoCapture;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.sql.SQLException;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -40,6 +46,9 @@ public final class LiveRecognitionRunner {
     private static final int REQUESTED_HEIGHT = 720;
 
     private static final int MAXIMUM_IMAGE_DIMENSION = 480;
+
+    private static final Duration EVENT_LOG_INTERVAL =
+            Duration.ofSeconds(5);
 
     /*
      * Recognition is performed once every 12 frames.
@@ -73,7 +82,7 @@ public final class LiveRecognitionRunner {
     }
 
     public static void main(String[] args)
-            throws IOException {
+            throws IOException, SQLException {
         System.out.println(
                 "VenueGuard live recognition starting..."
         );
@@ -88,6 +97,21 @@ public final class LiveRecognitionRunner {
                 "Loaded profile: %s (%d templates)%n",
                 profile.personName(),
                 profile.sampleCount()
+        );
+
+        VenueGuardDatabase database =
+                new VenueGuardDatabase();
+
+        database.initialize();
+
+        RecognitionEventRepository eventRepository =
+                new RecognitionEventRepository(
+                        database
+                );
+
+        System.out.println(
+                "Event database: "
+                        + database.databasePath()
         );
 
         ImagePreprocessor preprocessor =
@@ -154,6 +178,9 @@ public final class LiveRecognitionRunner {
             String displayedIdentity = "ANALYSING";
             double displayedSimilarity = Double.NaN;
             boolean displayedRecognition = false;
+
+            Instant lastStoredEventTime = null;
+            String lastStoredDecisionKey = null;
 
             while (true) {
                 boolean frameCaptured =
@@ -223,6 +250,74 @@ public final class LiveRecognitionRunner {
 
                             displayedRecognition =
                                     result.recognized();
+
+                            Instant eventTime =
+                                    Instant.now();
+
+                            String decisionReason =
+                                    result.recognized()
+                                            ? "SIMILARITY_AT_OR_ABOVE_THRESHOLD"
+                                            : "SIMILARITY_BELOW_THRESHOLD";
+
+                            String decisionKey =
+                                    result.identity()
+                                            + "|"
+                                            + result.recognized();
+
+                            boolean decisionChanged =
+                                    !decisionKey.equals(
+                                            lastStoredDecisionKey
+                                    );
+
+                            boolean intervalExpired =
+                                    lastStoredEventTime == null
+                                            || Duration.between(
+                                                    lastStoredEventTime,
+                                                    eventTime
+                                            )
+                                            .compareTo(
+                                                    EVENT_LOG_INTERVAL
+                                            ) >= 0;
+
+                            if (
+                                    decisionChanged
+                                            || intervalExpired
+                            ) {
+                                RecognitionEvent event =
+                                        new RecognitionEvent(
+                                                eventTime,
+                                                result.identity(),
+                                                result.recognized(),
+                                                result.similarity(),
+                                                result.threshold(),
+                                                CAMERA_INDEX,
+                                                decisionReason
+                                        );
+
+                                try {
+                                    eventRepository.save(event);
+
+                                    lastStoredEventTime =
+                                            eventTime;
+
+                                    lastStoredDecisionKey =
+                                            decisionKey;
+
+                                    System.out.printf(
+                                            "Stored event: %s, similarity %.4f%n",
+                                            result.identity(),
+                                            result.similarity()
+                                    );
+                                } catch (
+                                        IOException
+                                        | SQLException databaseException
+                                ) {
+                                    System.err.println(
+                                            "Could not store recognition event: "
+                                                    + databaseException.getMessage()
+                                    );
+                                }
+                            }
                         } catch (IllegalStateException exception) {
                             displayedIdentity =
                                     "CHECK FACE QUALITY";
