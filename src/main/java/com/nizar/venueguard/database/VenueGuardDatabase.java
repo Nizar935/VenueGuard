@@ -75,6 +75,32 @@ public final class VenueGuardDatabase {
         ) {
             statement.executeUpdate(
                     """
+                    CREATE TABLE IF NOT EXISTS identities (
+                        identity_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        person_name TEXT NOT NULL
+                            COLLATE NOCASE
+                            UNIQUE,
+                        profile_path TEXT NOT NULL UNIQUE,
+                        enabled INTEGER NOT NULL DEFAULT 1
+                            CHECK (enabled IN (0, 1)),
+                        registered_at_utc TEXT NOT NULL,
+                        updated_at_utc TEXT NOT NULL
+                    )
+                    """
+            );
+
+            statement.executeUpdate(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                        idx_identities_enabled
+                    ON identities (
+                        enabled
+                    )
+                    """
+            );
+
+            statement.executeUpdate(
+                    """
                     CREATE TABLE IF NOT EXISTS recognition_events (
                         event_id INTEGER PRIMARY KEY AUTOINCREMENT,
                         occurred_at_utc TEXT NOT NULL,

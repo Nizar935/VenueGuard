@@ -1,10 +1,12 @@
 package com.nizar.venueguard;
 
+import com.nizar.venueguard.database.IdentityRepository;
 import com.nizar.venueguard.database.RecognitionEvent;
 import com.nizar.venueguard.database.RecognitionEventRepository;
 import com.nizar.venueguard.database.VenueGuardDatabase;
 import com.nizar.venueguard.enrollment.EnrollmentProfile;
 import com.nizar.venueguard.enrollment.EnrollmentProfileStore;
+import com.nizar.venueguard.recognition.EnabledProfileLoader;
 import com.nizar.venueguard.recognition.FaceRecognitionService;
 import com.nizar.venueguard.recognition.RecognitionResult;
 import com.nizar.venueguard.vision.FaceDetection;
@@ -56,13 +58,6 @@ public final class LiveRecognitionRunner {
      */
     private static final int RECOGNITION_INTERVAL_FRAMES = 12;
 
-    private static final Path PROFILE_PATH =
-            Path.of(
-                    "data",
-                    "profiles",
-                    "Nizar.vgp"
-            );
-
     private static final Path FACE_DETECTION_MODEL =
             Path.of(
                     "models",
@@ -87,22 +82,46 @@ public final class LiveRecognitionRunner {
                 "VenueGuard live recognition starting..."
         );
 
-        EnrollmentProfileStore profileStore =
-                new EnrollmentProfileStore();
-
-        EnrollmentProfile profile =
-                profileStore.load(PROFILE_PATH);
-
-        System.out.printf(
-                "Loaded profile: %s (%d templates)%n",
-                profile.personName(),
-                profile.sampleCount()
-        );
-
         VenueGuardDatabase database =
                 new VenueGuardDatabase();
 
         database.initialize();
+
+        IdentityRepository identityRepository =
+                new IdentityRepository(
+                        database
+                );
+
+        EnrollmentProfileStore profileStore =
+                new EnrollmentProfileStore();
+
+        EnabledProfileLoader profileLoader =
+                new EnabledProfileLoader(
+                        identityRepository,
+                        profileStore
+                );
+
+        List<EnrollmentProfile> profiles =
+                profileLoader.loadEnabledProfiles();
+
+        if (profiles.isEmpty()) {
+            throw new IllegalStateException(
+                    "No enabled identities are registered"
+            );
+        }
+
+        System.out.println(
+                "Loaded enabled profiles: "
+                        + profiles.size()
+        );
+
+        for (EnrollmentProfile loadedProfile : profiles) {
+            System.out.printf(
+                    "- %s (%d templates)%n",
+                    loadedProfile.personName(),
+                    loadedProfile.sampleCount()
+            );
+        }
 
         RecognitionEventRepository eventRepository =
                 new RecognitionEventRepository(
@@ -239,7 +258,7 @@ public final class LiveRecognitionRunner {
                                     recognitionService.recognize(
                                             frame,
                                             primaryFace,
-                                            profile
+                                            profiles
                                     );
 
                             displayedIdentity =

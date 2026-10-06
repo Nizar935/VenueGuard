@@ -248,6 +248,23 @@ public final class FaceRecognitionService {
             EnrollmentProfile profile
     ) {
         Objects.requireNonNull(
+                profile,
+                "Enrollment profile cannot be null"
+        );
+
+        return recognize(
+                image,
+                detection,
+                List.of(profile)
+        );
+    }
+
+    public RecognitionResult recognize(
+            Mat image,
+            FaceDetection detection,
+            List<EnrollmentProfile> profiles
+    ) {
+        Objects.requireNonNull(
                 image,
                 "Image cannot be null"
         );
@@ -258,13 +275,26 @@ public final class FaceRecognitionService {
         );
 
         Objects.requireNonNull(
-                profile,
-                "Enrollment profile cannot be null"
+                profiles,
+                "Enrollment profiles cannot be null"
         );
 
         if (image.empty()) {
             throw new IllegalArgumentException(
                     "Image cannot be empty"
+            );
+        }
+
+        if (profiles.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "At least one enrollment profile is required"
+            );
+        }
+
+        for (EnrollmentProfile currentProfile : profiles) {
+            Objects.requireNonNull(
+                    currentProfile,
+                    "Enrollment profiles cannot contain null"
             );
         }
 
@@ -304,12 +334,70 @@ public final class FaceRecognitionService {
                                     detectionRow
                             )
             ) {
-                return compareAgainstProfile(
+                return compareAgainstProfiles(
                         queryEmbedding.copyValues(),
-                        profile
+                        profiles
                 );
             }
         }
+    }
+
+    private RecognitionResult compareAgainstProfiles(
+            float[] queryEmbedding,
+            List<EnrollmentProfile> profiles
+    ) {
+        validateEmbedding(queryEmbedding);
+
+        RecognitionResult bestResult = null;
+        EnrollmentProfile bestProfile = null;
+        int totalTemplatesCompared = 0;
+
+        for (EnrollmentProfile profile : profiles) {
+            RecognitionResult candidate =
+                    compareAgainstProfile(
+                            queryEmbedding,
+                            profile
+                    );
+
+            totalTemplatesCompared +=
+                    profile.sampleCount();
+
+            if (
+                    bestResult == null
+                            || candidate.similarity()
+                            > bestResult.similarity()
+            ) {
+                bestResult = candidate;
+                bestProfile = profile;
+            }
+        }
+
+        if (
+                bestResult == null
+                        || bestProfile == null
+        ) {
+            throw new IllegalStateException(
+                    "No enrollment profiles were compared"
+            );
+        }
+
+        boolean recognized =
+                bestResult.similarity()
+                        >= similarityThreshold;
+
+        String identity =
+                recognized
+                        ? bestProfile.personName()
+                        : "UNKNOWN";
+
+        return new RecognitionResult(
+                identity,
+                recognized,
+                bestResult.similarity(),
+                similarityThreshold,
+                bestResult.bestReference(),
+                totalTemplatesCompared
+        );
     }
 
     private static double cosineSimilarity(
